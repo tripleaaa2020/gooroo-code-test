@@ -1,49 +1,88 @@
 const Response = require('../utils/ResponseTemplate');
 const Books = require('../models').books;
 const Contributors = require('../models').contributors;
-const { Op } = require('sequelize')
+const { Op } = require('sequelize');
+const jwt = require('jsonwebtoken');
+const generateToken = require('../utils/TokenGenerator').setAuthToken;
 module.exports = {
     getAllBooks: async (req, response) => {
 
         console.log("WENT HERE GET ALL BOOK");
 
-        console.log(req.query);
+        const authToken = req.headers.authorization;
 
-        const categories = (req.query.categoryID !== undefined ? req.query.categoryID.split('_') : null);
-        const contributorID = (req.query.contributorID !== undefined ? parseInt(req.query.contributorID) : null);
-        const searchVal = (req.query.search !== undefined ? req.query.search : null);
+        if (authToken !== undefined) {
 
-        let whereClause = {
-            categoryID:
-                (categories !== null) ?
-                    { [Op.in]: categories } :
-                    { [Op.not]: null },
-            contributorID:
-                (contributorID !== null) ?
-                    contributorID :
-                    { [Op.not]: null },
-            title:
-                (searchVal !== null) ?
-                    { [Op.like]: "%" + searchVal + "%" } :
-                    { [Op.not]: null },
-        };
+            const categories = (req.query.categoryID !== undefined ? req.query.categoryID.split('_') : null);
+            const contributorID = (req.query.contributorID !== undefined ? parseInt(req.query.contributorID) : null);
+            const searchVal = (req.query.search !== undefined ? req.query.search : null);
 
-        await Books.findAndCountAll({
-            attributes: ['bookID', 'contributorID', 'title', 'author', 'publisher', 'categoryID'],
-            where: whereClause,
-            include: [
-                {
-                    model: Contributors,
-                    attributes: [['name', 'contributorName']],
-                    as: 'contributors',
-                },
-            ]
-        }).then(data => {
-            Response.success(
+            let whereClause = {
+                categoryID:
+                    (categories !== null) ?
+                        { [Op.in]: categories } :
+                        { [Op.not]: null },
+                contributorID:
+                    (contributorID !== null) ?
+                        contributorID :
+                        { [Op.not]: null },
+                title:
+                    (searchVal !== null) ?
+                        { [Op.like]: "%" + searchVal + "%" } :
+                        { [Op.not]: null },
+            };
+
+            jwt.verify(authToken, process.env.SECRET_KEY, (err, user) => {
+                if (err) {
+                    Response.fail(
+                        response,
+                        err,
+                    );
+                }
+                else {
+
+                    const { contributorID, email, name } = user;
+                    let newToken = generateToken(contributorID, email, name)
+
+                    Books.findAndCountAll({
+                        attributes: ['bookID', 'title', 'author', 'publisher', 'categoryID'],
+                        where: whereClause,
+                        include: [
+                            {
+                                model: Contributors,
+                                attributes: [['name', 'contributorName'], 'contributorID'],
+                                as: 'contributors',
+                            },
+                        ]
+                    }).then(data => {
+                        Response.success(
+                            response,
+                            {
+                                ...data,
+                                authToken: newToken
+                            },
+                        )
+                    }).catch(err => {
+                        Response.failWithData(
+                            response,
+                            "Operation Failed",
+                            {
+                                ...err,
+                                authToken: newToken
+                            }
+                        )
+                    })
+
+                }
+            })
+        }
+        else {
+            Response.failWithData(
                 response,
-                data
+                "Operation Forbidden"
             )
-        })
+        }
+
     },
     createBook: async (req, response) => {
 
@@ -59,17 +98,17 @@ module.exports = {
 
         if (authToken !== undefined) {
 
-            await Contributors.findOne(
-                {
-                    attributes: ['contributorID'],
-                    where: {
-                        authToken: authToken
-                    }
+            jwt.verify(authToken, process.env.SECRET_KEY, (err, user) => {
+                if (err) {
+                    Response.fail(
+                        response,
+                        err,
+                    );
                 }
-            )
-                .then(contributor => {
+                else {
 
-                    const contributorID = contributor.dataValues.contributorID;
+                    const { contributorID, email, name } = user;
+                    let newToken = generateToken(contributorID, email, name)
 
                     Books.create(
                         {
@@ -80,25 +119,30 @@ module.exports = {
                         }
                     )
                         .then(book => {
+                            console.log("new book =>", book)
                             Response.success(
                                 response,
-                                book,
+                                {
+                                    ...book.dataValues,
+                                    authToken: newToken
+                                },
                             )
                         })
                         .catch(err => {
-                            Response.error(
+                            Response.failWithData(
                                 response,
-                                err
+                                "Operation Failed",
+                                {
+                                    ...err,
+                                    authToken: newToken
+                                }
                             )
                         });
 
-                })
-                .catch(err => {
-                    Response.error(
-                        response,
-                        err
-                    )
-                })
+
+
+                }
+            })
 
         }
         else {
@@ -109,8 +153,6 @@ module.exports = {
                     message: 'Operation Forbidden',
                 });
         }
-
-
     },
     getBookDetails: async (req, response) => {
 
@@ -167,15 +209,17 @@ module.exports = {
 
         if (authToken !== undefined) {
 
-            await Contributors.findOne(
-                {
-                    attributes: ['contributorID'],
-                    where: {
-                        authToken: authToken
-                    }
+            jwt.verify(authToken, process.env.SECRET_KEY, (err, user) => {
+                if (err) {
+                    Response.fail(
+                        response,
+                        err,
+                    );
                 }
-            )
-                .then(contributor => {
+                else {
+
+                    const { contributorID, email, name } = user;
+                    let newToken = generateToken(contributorID, email, name)
 
                     Books.update({
                         ...updatedBookData,
@@ -188,16 +232,19 @@ module.exports = {
                             Response.success(
                                 response,
                                 {
-                                    message: "Book with book ID " + bookID + " successfully editted"
+                                    message: "Book with book ID " + bookID + " successfully editted",
+                                    authToken: newToken
                                 }
                             );
                         }
 
                         else {
-                            Response.fail(
+                            Response.failWithData(
                                 response,
+                                "Operation Failed",
                                 {
-                                    message: "Book with book ID " + bookID + " not found, edit failed!"
+                                    message: "Book with book ID " + bookID + " not found, edit failed!",
+                                    authToken: newToken
                                 }
                             )
                         }
@@ -206,13 +253,8 @@ module.exports = {
                         Response.fail(response, err)
                     })
 
-                })
-                .catch(err => {
-                    Response.error(
-                        response,
-                        err
-                    )
-                })
+                }
+            })
 
         }
         else {
@@ -234,15 +276,17 @@ module.exports = {
 
         if (authToken !== undefined) {
 
-            await Contributors.findOne(
-                {
-                    attributes: ['contributorID'],
-                    where: {
-                        authToken: authToken
-                    }
+            jwt.verify(authToken, process.env.SECRET_KEY, (err, user) => {
+                if (err) {
+                    Response.fail(
+                        response,
+                        err,
+                    );
                 }
-            )
-                .then(contributor => {
+                else {
+
+                    const { contributorID, email, name } = user;
+                    let newToken = generateToken(contributorID, email, name)
 
                     Books.destroy({
                         where: {
@@ -255,13 +299,16 @@ module.exports = {
                                     response,
                                     {
                                         message: "Book with book ID " + bookID + " successfully deleted",
+                                        authToken: newToken
                                     }
                                 )
                             else
-                                Response.fail(
+                                Response.failWithData(
                                     response,
+                                    "Operation Failed",
                                     {
                                         message: "Book with book ID " + bookID + " not found, delete failed!",
+                                        authToken: newToken
                                     }
                                 )
                         })
@@ -272,13 +319,8 @@ module.exports = {
                             )
                         });
 
-                })
-                .catch(err => {
-                    Response.error(
-                        response,
-                        err
-                    )
-                })
+                }
+            })
 
         }
         else {

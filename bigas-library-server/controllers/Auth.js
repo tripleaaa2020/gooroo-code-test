@@ -2,17 +2,58 @@ const Response = require('../utils/ResponseTemplate');
 const Contributors = require('../models').contributors;
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-process.env.SECRET_KEY = 'secret';
+const generateToken = require('../utils/TokenGenerator').setAuthToken;
 // const { Op } = require('sequelize')
 
 module.exports = {
 
+    authenticateToken(req, response) {
+
+        console.log("WENT HERE authenticateToken");
+        const token = req.headers.authorization;
+
+        if (token !== undefined) {
+            jwt.verify(token, process.env.SECRET_KEY, (err, user) => {
+                console.log("user => ", user);
+                if (err) {
+                    Response.fail(
+                        response,
+                        {
+                            message: 'Token Expired',
+                            tokenAuthenticated: false,
+                        }
+                    );
+                }
+                else {
+
+                    const {contributorID, email, name} = user;
+                    let token = generateToken(contributorID, email, name)
+
+                    Response.success(
+                        response,
+                        {
+                            message: 'Token Authenticated',
+                            tokenAuthenticated: true,
+                            authToken: token
+                        }
+                    );
+                }
+            })
+        }
+        else {
+            Response.fail(
+                response,
+                {
+                    message: 'No Token Found',
+                    tokenAuthenticated: false,
+                }
+            );
+        }
+    },
+
     loginContributor(req, response) {
 
         console.log("WENT HERE LOGIN");
-
-        const today = new Date();
-        let todayGMT7 = new Date(today.setHours(today.getHours() + 7));
 
         const { email, password } = req.body;
 
@@ -25,36 +66,20 @@ module.exports = {
                 if (contributor) {
                     console.log("Contributor datavalues=> ", contributor.dataValues);
                     if (bcrypt.compareSync(password, contributor.password)) {
-                        let token = jwt.sign(contributor.dataValues, process.env.SECRET_KEY, {
-                            expiresIn: 1440
-                        })
-                        Contributors.update({
-                            authToken: token,
-                            updatedAt: todayGMT7
-                        }, {
-                            where: {
-                                contributorID: contributor.dataValues.contributorID
-                            }
-                        }).then(result => {
-                            console.log("Contributor result => ", result);
-                            Response.success(
-                                response,
-                                {
-                                    userData: {
-                                        contributorID: contributor.dataValues.contributorID,
-                                        name: contributor.dataValues.name,
-                                        email: contributor.dataValues.email,
-                                    },
-                                    authToken: token
-                                },
-                            );
-                        }).catch(function (err) {
-                            Response.fail(response, err)
-                        })
+
+                        const {contributorID, email, name} = contributor.dataValues;
+                        let token = generateToken(contributorID, email, name);
+                        
+                        Response.success(
+                            response,
+                            {
+                                authToken: token,
+                            },
+                        );
                     }
                     else {
                         const err = "Wrong password"
-                        Response.error(
+                        Response.fail(
                             response,
                             err
                         );
@@ -62,7 +87,7 @@ module.exports = {
                 }
                 else {
                     const err = "Email does not exist";
-                    Response.error(
+                    Response.fail(
                         response,
                         err
                     );
@@ -90,7 +115,7 @@ module.exports = {
         ).then(data => {
             if (data !== null) {
                 data.update({
-                    authToken: null,
+                    refreshToken: null,
                     updatedAt: todayGMT7
                 })
                     .then(res => {
@@ -158,7 +183,7 @@ module.exports = {
                 }
                 else {
                     const err = "This email is already in use by another contributor!";
-                    Response.error(
+                    Response.fail(
                         response,
                         err
                     )

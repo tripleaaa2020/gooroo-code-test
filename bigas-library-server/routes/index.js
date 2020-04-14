@@ -2,7 +2,8 @@ const EXPRESS = require('express');
 const ROUTER = EXPRESS.Router();
 const CTRL = require('../controllers');
 
-    // AUTH 
+    // AUTH
+        ROUTER.post('/auth/token', CTRL.AUTH.authenticateToken) 
         ROUTER.post('/auth/login', CTRL.AUTH.loginContributor)
         ROUTER.post('/auth/logout', CTRL.AUTH.logoutContributor)
         ROUTER.post('/auth/register', CTRL.AUTH.registerContributor)
